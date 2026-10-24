@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:scamshield/services/scam_service.dart';
 
 class ReportScamScreen extends StatefulWidget {
   const ReportScamScreen({super.key});

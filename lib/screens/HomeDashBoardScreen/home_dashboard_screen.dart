@@ -1,8 +1,8 @@
-
 import 'package:flutter/material.dart';
+import 'package:scamshield/screens/AlertDetailsScreen/alert_details_screen.dart';
+import 'package:scamshield/services/scam_service.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
-  // Pass true only after checking actual Android notification access.
   final bool notificationAccessEnabled;
 
   final VoidCallback? onOpenManualChecker;
@@ -32,13 +32,47 @@ class HomeDashboardScreen extends StatefulWidget {
       _HomeDashboardScreenState();
 }
 
-class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+class _HomeDashboardScreenState extends State<HomeDashboardScreen>
+    with WidgetsBindingObserver {
   static const Color navy = Color(0xFF101B2D);
   static const Color saffron = Color(0xFFD98E04);
   static const Color muted = Color(0xFFADB8C9);
   static const Color background = Color(0xFFF5F7FA);
 
   int selectedIndex = 0;
+  bool _accessEnabled = false;
+  List<ScanRecord> _recentScans = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadDashboardData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadDashboardData();
+    }
+  }
+
+  Future<void> _loadDashboardData() async {
+    final granted = await ScamService.instance.isNotificationPermissionGranted();
+    final scans = await ScamService.instance.getScanHistory();
+    if (mounted) {
+      setState(() {
+        _accessEnabled = granted;
+        _recentScans = scans;
+      });
+    }
+  }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
@@ -64,7 +98,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool accessEnabled = widget.notificationAccessEnabled;
+    final totalChecked = _recentScans.length;
+    final totalRisky = _recentScans.where((s) => s.risk == 'High' || s.risk == 'Medium').length;
 
     return Scaffold(
       backgroundColor: background,
@@ -187,7 +222,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             borderRadius: BorderRadius.circular(15),
                           ),
                           child: Icon(
-                            accessEnabled
+                            _accessEnabled
                                 ? Icons.shield_outlined
                                 : Icons.shield_moon_outlined,
                             color: saffron,
@@ -206,10 +241,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           ),
                         ),
                         Icon(
-                          accessEnabled
+                          _accessEnabled
                               ? Icons.check_circle
                               : Icons.info_outline_rounded,
-                          color: accessEnabled
+                          color: _accessEnabled
                               ? const Color(0xFF72D6A0)
                               : saffron,
                           size: 25,
@@ -220,9 +255,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     const SizedBox(height: 20),
 
                     Text(
-                      accessEnabled
-                          ? 'Notification access enabled'
-                          : 'Setup required',
+                      _accessEnabled
+                          ? 'Listener Protection Active'
+                          : 'Setup Required',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -233,13 +268,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     const SizedBox(height: 8),
 
                     Text(
-                      accessEnabled
-                          ? 'Notification access is granted. '
-                          'Detection also requires the listener '
-                          'and analysis system to be working.'
-                          : 'Enable notification access to allow '
-                          'ScamShield to inspect supported '
-                          'notifications.',
+                      _accessEnabled
+                          ? 'Android Notification Listener Service is granted and active on device.'
+                          : 'Enable notification access to allow ScamShield to inspect supported notifications.',
                       style: const TextStyle(
                         color: muted,
                         fontSize: 13,
@@ -269,8 +300,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              accessEnabled
-                                  ? 'Check Protection Setup'
+                              _accessEnabled
+                                  ? 'Manage Protection Setup'
                                   : 'Enable Protection',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
@@ -312,7 +343,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       icon: Icons.document_scanner_outlined,
                       iconColor: const Color(0xFF3D6FE0),
                       title: 'Messages',
-                      value: '0',
+                      value: '$totalChecked',
                       subtitle: 'Checked',
                     ),
                   ),
@@ -322,7 +353,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       icon: Icons.warning_amber_rounded,
                       iconColor: const Color(0xFFC24141),
                       title: 'Risky',
-                      value: '0',
+                      value: '$totalRisky',
                       subtitle: 'Detected',
                     ),
                   ),
@@ -511,49 +542,116 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ],
               ),
 
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 26,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFFE7EAF0),
+              if (_recentScans.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 26,
                   ),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(
-                      Icons.inbox_outlined,
-                      color: Color(0xFF9AA5B5),
-                      size: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFFE7EAF0),
                     ),
-                    SizedBox(height: 10),
-                    Text(
-                      'No activity yet',
-                      style: TextStyle(
-                        color: navy,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(
+                        Icons.inbox_outlined,
+                        color: Color(0xFF9AA5B5),
+                        size: 42,
                       ),
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      'Your analyzed messages and alerts '
-                          'will appear here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Color(0xFF687588),
-                        fontSize: 12,
-                        height: 1.5,
+                      SizedBox(height: 10),
+                      Text(
+                        'No activity yet',
+                        style: TextStyle(
+                          color: navy,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                  ],
+                      SizedBox(height: 6),
+                      Text(
+                        'Your analyzed messages and alerts will appear here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF687588),
+                          fontSize: 12,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Column(
+                  children: _recentScans.take(3).map((item) {
+                    final isHigh = item.risk == 'High';
+                    final isMedium = item.risk == 'Medium';
+                    final color = isHigh
+                        ? const Color(0xFFC24141)
+                        : (isMedium ? const Color(0xFFB7791F) : const Color(0xFF16834A));
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      elevation: 0,
+                      color: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: const BorderSide(color: Color(0xFFE7EAF0)),
+                      ),
+                      child: ListTile(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlertDetailsScreen(
+                                title: item.title,
+                                source: item.source,
+                                time: item.time,
+                                message: item.message,
+                                risk: item.risk,
+                                category: item.category,
+                                reason: item.reason,
+                                recommendation: item.recommendation,
+                              ),
+                            ),
+                          );
+                        },
+                        leading: CircleAvatar(
+                          backgroundColor: color.withValues(alpha: 0.12),
+                          child: Icon(
+                            isHigh ? Icons.gpp_bad_rounded : Icons.shield_outlined,
+                            color: color,
+                          ),
+                        ),
+                        title: Text(
+                          item.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        subtitle: Text(
+                          item.message,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            item.risk,
+                            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              ),
 
               const SizedBox(height: 18),
 
@@ -655,14 +753,15 @@ class _StatCard extends StatelessWidget {
   });
 
   static const Color navy = Color(0xFF101B2D);
+  static const Color muted = Color(0xFF687588);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(17),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: const Color(0xFFE7EAF0),
         ),
@@ -672,34 +771,44 @@ class _StatCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: iconColor, size: 23),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF687588),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Container(
+                height: 38,
+                width: 38,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 20,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: navy,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 17),
+          const SizedBox(height: 14),
           Text(
-            value,
+            title,
             style: const TextStyle(
               color: navy,
-              fontSize: 29,
-              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             subtitle,
             style: const TextStyle(
-              color: Color(0xFF8993A1),
+              color: muted,
               fontSize: 11,
             ),
           ),
@@ -709,7 +818,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// Quick action card
 class _QuickActionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -725,17 +833,18 @@ class _QuickActionCard extends StatelessWidget {
 
   static const Color navy = Color(0xFF101B2D);
   static const Color saffron = Color(0xFFD98E04);
+  static const Color muted = Color(0xFF687588);
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: const Color(0xFFE7EAF0),
           ),
@@ -743,8 +852,20 @@ class _QuickActionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: saffron, size: 28),
-            const SizedBox(height: 15),
+            Container(
+              height: 42,
+              width: 42,
+              decoration: BoxDecoration(
+                color: saffron.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                icon,
+                color: saffron,
+                size: 22,
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               title,
               style: const TextStyle(
@@ -753,13 +874,12 @@ class _QuickActionCard extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 3),
             Text(
               subtitle,
               style: const TextStyle(
-                color: Color(0xFF687588),
+                color: muted,
                 fontSize: 11,
-                height: 1.4,
               ),
             ),
           ],

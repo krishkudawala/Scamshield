@@ -1,43 +1,64 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:scamshield/services/scam_service.dart';
 
-class NotificationPermissionScreen extends StatelessWidget {
+class NotificationPermissionScreen extends StatefulWidget {
   const NotificationPermissionScreen({super.key});
 
+  @override
+  State<NotificationPermissionScreen> createState() =>
+      _NotificationPermissionScreenState();
+}
+
+class _NotificationPermissionScreenState
+    extends State<NotificationPermissionScreen> with WidgetsBindingObserver {
   static const Color navy = Color(0xFF101B2D);
   static const Color saffron = Color(0xFFD98E04);
   static const Color muted = Color(0xFFADB8C9);
 
-  static const MethodChannel _channel =
-  MethodChannel('scamshield/notifications');
+  bool _isGranted = false;
+  bool _isLoading = true;
 
-  Future<void> _openNotificationSettings(
-      BuildContext context,
-      ) async {
-    try {
-      await _channel.invokeMethod(
-        'openNotificationAccessSettings',
-      );
-    } on PlatformException {
-      if (!context.mounted) return;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermission();
+  }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermission();
+    }
+  }
+
+  Future<void> _checkPermission() async {
+    final granted = await ScamService.instance.isNotificationPermissionGranted();
+    if (mounted) {
+      setState(() {
+        _isGranted = granted;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleEnableAccess() async {
+    await ScamService.instance.openNotificationAccessSettings();
+    await _checkPermission();
+    if (mounted && _isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Could not open settings. Please open Android Settings manually.',
-          ),
+          content: Text('Notification Listener Protection Enabled!'),
+          backgroundColor: Color(0xFF16834A),
         ),
       );
-    } on MissingPluginException {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Android integration is not configured yet.',
-          ),
-        ),
-      );
+      Navigator.pushReplacementNamed(context, '/home');
     }
   }
 
@@ -83,23 +104,66 @@ class NotificationPermissionScreen extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Main illustration
+              // Main illustration & Status Badge
               Center(
-                child: Container(
-                  height: 110,
-                  width: 110,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: saffron.withValues(alpha: 0.10),
-                    border: Border.all(
-                      color: saffron.withValues(alpha: 0.35),
+                child: Column(
+                  children: [
+                    Container(
+                      height: 110,
+                      width: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isGranted
+                            ? const Color(0xFF16834A).withValues(alpha: 0.15)
+                            : saffron.withValues(alpha: 0.10),
+                        border: Border.all(
+                          color: _isGranted
+                              ? const Color(0xFF16834A)
+                              : saffron.withValues(alpha: 0.35),
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        _isGranted ? Icons.shield_rounded : Icons.notifications_active_outlined,
+                        color: _isGranted ? const Color(0xFF16834A) : saffron,
+                        size: 56,
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.notifications_active_outlined,
-                    color: saffron,
-                    size: 56,
-                  ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _isGranted
+                            ? const Color(0xFF16834A).withValues(alpha: 0.2)
+                            : saffron.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _isGranted ? const Color(0xFF16834A) : saffron,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isGranted ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                            color: _isGranted ? const Color(0xFF72D6A0) : saffron,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isLoading
+                                ? 'Checking...'
+                                : (_isGranted ? 'Listener Active & Granted' : 'Access Required'),
+                            style: TextStyle(
+                              color: _isGranted ? const Color(0xFF72D6A0) : saffron,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -118,9 +182,8 @@ class NotificationPermissionScreen extends StatelessWidget {
               const SizedBox(height: 10),
 
               const Text(
-                'Allow ScamShield to inspect the text '
-                    'available in supported notifications '
-                    'and identify possible scam signals.',
+                'Allow ScamShield Notification Listener Service to inspect SMS, '
+                'WhatsApp, and banking notifications in real-time on device for scam threats.',
                 style: TextStyle(
                   color: muted,
                   fontSize: 13,
@@ -133,27 +196,24 @@ class NotificationPermissionScreen extends StatelessWidget {
               // Feature cards
               const _PermissionFeature(
                 icon: Icons.message_outlined,
-                title: 'Monitor supported notifications',
-                subtitle:
-                'Read notification content when Android makes it available.',
+                title: 'Real-time Android Listener Service',
+                subtitle: 'Active background service monitors SMS & app notifications.',
               ),
 
               const SizedBox(height: 14),
 
               const _PermissionFeature(
                 icon: Icons.psychology_outlined,
-                title: 'Analyze suspicious signals',
-                subtitle:
-                'Check message wording and available links for warning signs.',
+                title: 'AI & Hybrid Rule Threat Detector',
+                subtitle: 'Scans message wording, links, and UPI PIN traps.',
               ),
 
               const SizedBox(height: 14),
 
               const _PermissionFeature(
                 icon: Icons.vibration_rounded,
-                title: 'Receive safety alerts',
-                subtitle:
-                'Get an alert when the analysis identifies a potential risk.',
+                title: 'Haptic & Vibration Alerts',
+                subtitle: 'Triggers instant device vibration on high-risk scam alerts.',
               ),
 
               const SizedBox(height: 24),
@@ -179,9 +239,8 @@ class NotificationPermissionScreen extends StatelessWidget {
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Notification access can expose private '
-                            'message content. Only enable it if you '
-                            'agree to the app’s stated data practices.',
+                        'Notification access is handled on-device. Privacy is protected '
+                        'and analyzed content is saved in local history.',
                         style: TextStyle(
                           color: muted,
                           fontSize: 12,
@@ -195,36 +254,33 @@ class NotificationPermissionScreen extends StatelessWidget {
 
               const SizedBox(height: 18),
 
-              // Open Android settings
+              // Open Android settings / Continue
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () async {
-                    await _openNotificationSettings(context);
-                    if (!context.mounted) return;
-                    Navigator.pushReplacementNamed(context, '/home');
-                  },
+                  onPressed: _handleEnableAccess,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: saffron,
+                    backgroundColor: _isGranted ? const Color(0xFF16834A) : saffron,
                     foregroundColor: navy,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Enable Notification Access',
-                        style: TextStyle(
+                        _isGranted ? 'Protection Granted • Go to Home' : 'Enable Notification Access',
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, color: Colors.white),
                     ],
                   ),
                 ),

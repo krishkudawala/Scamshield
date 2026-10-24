@@ -1,6 +1,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:scamshield/screens/MessageAnalysisResultScreen/message_analysis_result_screen.dart';
+import 'package:scamshield/services/scam_service.dart';
 
 class ManualMessageCheckerScreen extends StatefulWidget {
   final void Function(String message, String language)? onAnalyze;
@@ -62,7 +64,7 @@ class _ManualMessageCheckerScreenState
     });
   }
 
-  void _analyzeMessage() {
+  Future<void> _analyzeMessage() async {
     final message = _messageController.text.trim();
 
     if (message.isEmpty) {
@@ -72,22 +74,31 @@ class _ManualMessageCheckerScreenState
 
     FocusScope.of(context).unfocus();
 
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Analyzing message with ScamShield Hybrid Engine...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    await ScamService.instance.analyzeMessage(message, selectedLanguage);
+
+    if (!mounted) return;
+
     if (widget.onAnalyze != null) {
       widget.onAnalyze!(message, selectedLanguage);
       return;
     }
 
-    // UI-only fallback. No AI or live scan is performed here.
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Message ready. Connect the analysis screen or API next.',
-          ),
-          behavior: SnackBarBehavior.floating,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MessageAnalysisResultScreen(
+          message: message,
+          language: selectedLanguage,
         ),
-      );
+      ),
+    );
   }
 
   @override

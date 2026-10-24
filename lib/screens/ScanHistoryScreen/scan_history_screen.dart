@@ -1,9 +1,7 @@
-
 import 'package:flutter/material.dart';
 import 'package:scamshield/screens/AlertDetailsScreen/alert_details_screen.dart';
 import 'package:scamshield/screens/LiveScamAlertsScreen/live_scam_alerts_screen.dart';
-
-
+import 'package:scamshield/services/scam_service.dart';
 
 class ScanHistoryScreen extends StatefulWidget {
   final List<ScamAlertItem>? history;
@@ -28,9 +26,9 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
   TextEditingController();
 
   String selectedRisk = 'All';
-  late List<ScamAlertItem> _history;
+  List<ScamAlertItem> _history = [];
+  bool _isLoading = true;
 
-  // Demo data for development. Replace with saved scan records.
   final List<ScamAlertItem> _demoHistory = const [
     ScamAlertItem(
       title: 'Possible bank impersonation',
@@ -74,41 +72,35 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
       recommendation:
       'Check the tracking number through the courier official website.',
     ),
-    ScamAlertItem(
-      title: 'Unknown payment request',
-      source: 'WhatsApp',
-      time: '22 Oct · 03:40 PM',
-      message:
-      'Please transfer the money immediately to confirm your booking.',
-      risk: 'Medium',
-      category: 'Payment request',
-      reason:
-      'An urgent and unexpected payment request should be verified.',
-      recommendation:
-      'Contact the person or organization using a trusted contact method.',
-    ),
-    ScamAlertItem(
-      title: 'Message reviewed',
-      source: 'Manual checker',
-      time: '21 Oct · 11:25 AM',
-      message:
-      'Your appointment confirmation is ready.',
-      risk: 'Low',
-      category: 'General message',
-      reason:
-      'The demo rule checker found few common warning patterns.',
-      recommendation:
-      'No matching warning patterns does not guarantee safety. '
-          'Verify unexpected requests independently.',
-    ),
   ];
 
   @override
   void initState() {
     super.initState();
-    _history = List<ScamAlertItem>.from(
-      widget.history ?? _demoHistory,
-    );
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final savedScans = await ScamService.instance.getScanHistory();
+    if (savedScans.isNotEmpty) {
+      _history = savedScans
+          .map((s) => ScamAlertItem(
+                title: s.title,
+                source: s.source,
+                time: s.time,
+                message: s.message,
+                risk: s.risk,
+                category: s.category,
+                reason: s.reason,
+                recommendation: s.recommendation,
+              ))
+          .toList();
+    } else {
+      _history = List<ScamAlertItem>.from(widget.history ?? _demoHistory);
+    }
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -161,8 +153,7 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
         return AlertDialog(
           title: const Text('Clear scan history?'),
           content: const Text(
-            'This removes all records from this screen. '
-                'This demo action does not delete records from a database.',
+            'This removes all saved scan records from device local storage.',
           ),
           actions: [
             TextButton(
@@ -185,13 +176,17 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
 
     if (shouldClear != true || !mounted) return;
 
+    await ScamService.instance.clearScanHistory();
+
+    if (!mounted) return;
+
     setState(() {
       _history.clear();
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('History cleared from this screen.'),
+        content: Text('Scan history cleared persistently.'),
       ),
     );
   }
@@ -218,17 +213,8 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
   Widget build(BuildContext context) {
     final items = _filteredHistory;
 
-    final highCount = _history
-        .where((item) => item.risk == 'High')
-        .length;
-
-    final mediumCount = _history
-        .where((item) => item.risk == 'Medium')
-        .length;
-
     return Scaffold(
       backgroundColor: background,
-
       appBar: AppBar(
         backgroundColor: background,
         foregroundColor: navy,
@@ -244,8 +230,8 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
         actions: [
           IconButton(
             onPressed: _confirmClearHistory,
-            tooltip: 'Clear history',
             icon: const Icon(Icons.delete_outline_rounded),
+            tooltip: 'Clear history',
           ),
           const SizedBox(width: 6),
         ],
@@ -253,472 +239,114 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen> {
 
       body: SafeArea(
         top: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  20, 8, 20, 24,
-                ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
                 children: [
-                  const Text(
-                    'Your Scan Activity',
-                    style: TextStyle(
-                      color: navy,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-
-                  const SizedBox(height: 7),
-
-                  const Text(
-                    'Find previously analyzed messages and review '
-                        'their risk assessments.',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 13,
-                      height: 1.6,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Summary cards
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _SummaryCard(
-                          title: 'Total scans',
-                          value: '${_history.length}',
-                          icon: Icons.manage_search_rounded,
-                          color: const Color(0xFF3D6FE0),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _SummaryCard(
-                          title: 'High risk',
-                          value: '$highCount',
-                          icon: Icons.warning_amber_rounded,
-                          color: const Color(0xFFC24141),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _SummaryCard(
-                          title: 'Medium',
-                          value: '$mediumCount',
-                          icon: Icons.error_outline_rounded,
-                          color: const Color(0xFFB7791F),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 22),
-
-                  // Search field
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(
-                        color: const Color(0xFFE2E7EF),
-                      ),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        hintText: 'Search messages or categories...',
-                        hintStyle: const TextStyle(
-                          color: Color(0xFF9AA5B5),
-                          fontSize: 12,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          color: muted,
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _searchController.clear();
-                            });
-                          },
-                          icon: const Icon(
-                            Icons.close_rounded,
-                          ),
-                        )
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding:
-                        const EdgeInsets.symmetric(vertical: 15),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 22),
-
-                  const Text(
-                    'Filter by risk',
-                    style: TextStyle(
-                      color: navy,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['All', 'High', 'Medium', 'Low']
-                          .map((risk) {
-                        final selected = selectedRisk == risk;
-
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 9),
-                          child: ChoiceChip(
-                            label: Text(risk),
-                            selected: selected,
-                            onSelected: (_) {
-                              setState(() {
-                                selectedRisk = risk;
-                              });
-                            },
-                            selectedColor: saffron.withValues(
-                              alpha: 0.18,
-                            ),
-                            backgroundColor: Colors.white,
-                            showCheckmark: false,
-                            labelStyle: TextStyle(
-                              color: selected ? navy : muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(11),
-                              side: BorderSide(
-                                color: selected
-                                    ? saffron
-                                    : const Color(0xFFE2E7EF),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 22),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Previous scans',
-                        style: TextStyle(
-                          color: navy,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        '${items.length} records',
-                        style: const TextStyle(
-                          color: muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 13),
-
-                  if (items.isEmpty)
-                    _EmptyHistory(
-                      hasRecords: _history.isNotEmpty,
-                    )
-                  else
-                    ...items.map(
-                          (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _HistoryCard(
-                          item: item,
-                          riskColor: _riskColor(item.risk),
-                          onTap: () => _openDetails(item),
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 8),
-
-                  const Center(
-                    child: Text(
-                      'Sample records are for UI testing only.',
-                      style: TextStyle(
-                        color: Color(0xFF8993A1),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _SummaryCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE7EAF0),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF101B2D),
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF687588),
-              fontSize: 10,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HistoryCard extends StatelessWidget {
-  final ScamAlertItem item;
-  final Color riskColor;
-  final VoidCallback onTap;
-
-  const _HistoryCard({
-    required this.item,
-    required this.riskColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: const Color(0xFFE7EAF0),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 43,
-                    width: 43,
-                    decoration: BoxDecoration(
-                      color: riskColor.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Icon(
-                      Icons.history_rounded,
-                      color: riskColor,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                  // Search & Filter
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                     child: Column(
-                      crossAxisAlignment:
-                      CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          item.title,
-                          style: const TextStyle(
-                            color: Color(0xFF101B2D),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                        TextField(
+                          controller: _searchController,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'Search history...',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          '${item.source}  •  ${item.time}',
-                          style: const TextStyle(
-                            color: Color(0xFF687588),
-                            fontSize: 11,
+                        const SizedBox(height: 12),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: ['All', 'High', 'Medium', 'Low'].map((risk) {
+                              final isSelected = selectedRisk == risk;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: FilterChip(
+                                  selected: isSelected,
+                                  label: Text(risk),
+                                  onSelected: (_) => setState(() => selectedRisk = risk),
+                                  selectedColor: saffron.withValues(alpha: 0.2),
+                                  checkmarkColor: saffron,
+                                ),
+                              );
+                            }).toList(),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: riskColor.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      item.risk,
-                      style: TextStyle(
-                        color: riskColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
 
-              const SizedBox(height: 13),
-
-              Text(
-                item.message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF455165),
-                  fontSize: 12,
-                  height: 1.6,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
+                  // History list
                   Expanded(
-                    child: Text(
-                      item.category,
-                      style: const TextStyle(
-                        color: Color(0xFF687588),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                  const Text(
-                    'View details',
-                    style: TextStyle(
-                      color: Color(0xFF9A6500),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF9A6500),
-                    size: 16,
+                    child: items.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No matching scan records found.',
+                              style: TextStyle(color: muted),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            itemCount: items.length,
+                            itemBuilder: (context, index) {
+                              final item = items[index];
+                              final color = _riskColor(item.risk);
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                elevation: 0,
+                                color: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  side: const BorderSide(color: Color(0xFFE2E7EF)),
+                                ),
+                                child: ListTile(
+                                  onTap: () => _openDetails(item),
+                                  leading: CircleAvatar(
+                                    backgroundColor: color.withValues(alpha: 0.12),
+                                    child: Icon(
+                                      item.risk == 'High' ? Icons.gpp_bad_rounded : Icons.shield_outlined,
+                                      color: color,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    item.title,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  subtitle: Text(
+                                    item.message,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      item.risk,
+                                      style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyHistory extends StatelessWidget {
-  final bool hasRecords;
-
-  const _EmptyHistory({required this.hasRecords});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(27),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFE7EAF0),
-        ),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.manage_search_rounded,
-            color: Color(0xFF8993A1),
-            size: 45,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            hasRecords
-                ? 'No matching scans'
-                : 'No scan history yet',
-            style: const TextStyle(
-              color: Color(0xFF101B2D),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            hasRecords
-                ? 'Try another search or risk filter.'
-                : 'Analyzed messages will appear here '
-                'once scan history storage is connected.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF687588),
-              fontSize: 12,
-              height: 1.6,
-            ),
-          ),
-        ],
       ),
     );
   }

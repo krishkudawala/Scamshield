@@ -1,5 +1,5 @@
-
 import 'package:flutter/material.dart';
+import 'package:scamshield/services/scam_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool notificationAccessEnabled;
@@ -21,7 +21,7 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   static const Color navy = Color(0xFF101B2D);
   static const Color saffron = Color(0xFFD98E04);
   static const Color background = Color(0xFFF5F7FA);
@@ -30,11 +30,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String selectedLanguage = 'English';
   String alertSensitivity = 'Balanced';
 
+  bool accessGranted = false;
   bool vibrationEnabled = true;
   bool highRiskAlertsEnabled = true;
   bool mediumRiskAlertsEnabled = true;
   bool showAlertPreview = true;
   bool useAiWhenAvailable = true;
+
+  String springBootUrl = 'http://10.0.2.2:8080/api/analyze';
+  String ollamaUrl = 'http://localhost:11434/api/generate';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadSettings();
+    }
+  }
+
+  Future<void> _loadSettings() async {
+    final granted = await ScamService.instance.isNotificationPermissionGranted();
+    final vib = await ScamService.instance.isVibrationEnabled();
+    final lang = await ScamService.instance.getAppLanguage();
+    final spring = await ScamService.instance.getSpringBootUrl();
+    final ollama = await ScamService.instance.getOllamaUrl();
+
+    if (mounted) {
+      setState(() {
+        accessGranted = granted;
+        vibrationEnabled = vib;
+        selectedLanguage = lang;
+        springBootUrl = spring;
+        ollamaUrl = ollama;
+      });
+    }
+  }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
@@ -53,8 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Clear scan history?'),
         content: const Text(
-          'This action may remove saved scan records. '
-              'Make sure you understand which stored data will be deleted.',
+          'This action removes all stored scan records persistently from local storage.',
         ),
         actions: [
           TextButton(
@@ -64,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text(
-              'Continue',
+              'Clear History',
               style: TextStyle(color: Color(0xFFC24141)),
             ),
           ),
@@ -74,21 +115,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirmed != true || !mounted) return;
 
+    await ScamService.instance.clearScanHistory();
     if (widget.onClearHistory != null) {
       widget.onClearHistory!();
-      _showMessage('History clear action requested.');
-    } else {
-      _showMessage(
-        'History storage is not connected yet.',
-      );
     }
+    _showMessage('Scan history cleared persistently.');
+  }
+
+  void _configureServerUrls() {
+    final springController = TextEditingController(text: springBootUrl);
+    final ollamaController = TextEditingController(text: ollamaUrl);
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Spring Boot & Ollama API Settings'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Configure Spring Boot & Ollama endpoints for live remote AI analysis:',
+                style: TextStyle(fontSize: 12, color: muted),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: springController,
+                decoration: const InputDecoration(
+                  labelText: 'Spring Boot Endpoint',
+                  hintText: 'http://10.0.2.2:8080/api/analyze',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ollamaController,
+                decoration: const InputDecoration(
+                  labelText: 'Ollama Endpoint',
+                  hintText: 'http://localhost:11434/api/generate',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await ScamService.instance.setSpringBootUrl(springController.text.trim());
+              await ScamService.instance.setOllamaUrl(ollamaController.text.trim());
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              _loadSettings();
+              _showMessage('Server configuration saved!');
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openPrivacy() {
     if (widget.onOpenPrivacy != null) {
       widget.onOpenPrivacy!();
     } else {
-      _showMessage('Connect the Privacy screen here.');
+      Navigator.pushNamed(context, '/privacy');
     }
   }
 
@@ -96,14 +192,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (widget.onOpenAbout != null) {
       widget.onOpenAbout!();
     } else {
-      _showMessage('Connect the About screen here.');
+      Navigator.pushNamed(context, '/privacy');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final accessEnabled = widget.notificationAccessEnabled;
-
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
@@ -187,29 +281,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Notification access
             _SettingsTile(
               icon: Icons.notifications_active_outlined,
-              iconColor: accessEnabled
+              iconColor: accessGranted
                   ? const Color(0xFF16834A)
                   : saffron,
               title: 'Notification access',
-              subtitle: accessEnabled
-                  ? 'Android notification access is enabled'
-                  : 'Permission is not confirmed',
+              subtitle: accessGranted
+                  ? 'Android notification listener access is enabled'
+                  : 'Listener permission is required',
               trailing: Icon(
-                accessEnabled
+                accessGranted
                     ? Icons.check_circle_rounded
                     : Icons.warning_amber_rounded,
-                color: accessEnabled
+                color: accessGranted
                     ? const Color(0xFF16834A)
                     : saffron,
               ),
-              onTap: () {
-                if (widget.onOpenNotificationSettings != null) {
-                  widget.onOpenNotificationSettings!();
-                } else {
-                  _showMessage(
-                    'Connect Android Notification Access settings.',
-                  );
-                }
+              onTap: () async {
+                await ScamService.instance.openNotificationAccessSettings();
+                await _loadSettings();
               },
             ),
 
@@ -245,18 +334,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
               ),
-              onTap: () {
-                _showMessage(
-                  'Sensitivity changes only the UI setting until '
-                      'your detector is connected.',
-                );
-              },
+              onTap: () {},
             ),
 
             const SizedBox(height: 26),
 
             const _SettingsSectionTitle(
-              title: 'Notifications',
+              title: 'Notifications & Haptics',
               subtitle: 'Choose which warnings you receive',
             ),
 
@@ -267,8 +351,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Vibration alerts',
               subtitle: 'Vibrate for configured scam warnings',
               value: vibrationEnabled,
-              onChanged: (value) {
+              onChanged: (value) async {
                 setState(() => vibrationEnabled = value);
+                await ScamService.instance.setVibrationEnabled(value);
+                if (value) {
+                  await ScamService.instance.triggerVibration();
+                }
               },
             ),
 
@@ -296,23 +384,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
 
-            const SizedBox(height: 10),
-
-            _SettingsSwitchTile(
-              icon: Icons.visibility_outlined,
-              title: 'Notification previews',
-              subtitle: 'Show message excerpts in ScamShield alerts',
-              value: showAlertPreview,
-              onChanged: (value) {
-                setState(() => showAlertPreview = value);
-              },
-            ),
-
             const SizedBox(height: 26),
 
             const _SettingsSectionTitle(
-              title: 'Language & AI',
-              subtitle: 'Choose your experience',
+              title: 'Language & AI Endpoints',
+              subtitle: 'Choose your language & AI connection',
             ),
 
             const SizedBox(height: 12),
@@ -340,31 +416,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Text('English'),
                     ),
                   ],
-                  onChanged: (value) {
+                  onChanged: (value) async {
                     if (value != null) {
                       setState(() => selectedLanguage = value);
+                      await ScamService.instance.setAppLanguage(value);
                     }
                   },
                 ),
               ),
-              onTap: () {
-                _showMessage(
-                  'Language is selected for this screen only until '
-                      'app-wide localization is connected.',
-                );
-              },
+              onTap: () {},
             ),
 
             const SizedBox(height: 10),
 
-            _SettingsSwitchTile(
-              icon: Icons.psychology_outlined,
-              title: 'AI analysis',
-              subtitle: 'Use AI when an analysis service is available',
-              value: useAiWhenAvailable,
-              onChanged: (value) {
-                setState(() => useAiWhenAvailable = value);
-              },
+            _SettingsTile(
+              icon: Icons.cloud_outlined,
+              iconColor: const Color(0xFF3867D6),
+              title: 'Spring Boot & Ollama API',
+              subtitle: 'Configure remote AI server endpoints',
+              trailing: const Icon(
+                Icons.settings_outlined,
+                size: 20,
+                color: muted,
+              ),
+              onTap: _configureServerUrls,
             ),
 
             const SizedBox(height: 26),
@@ -395,7 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.delete_outline_rounded,
               iconColor: const Color(0xFFC24141),
               title: 'Clear scan history',
-              subtitle: 'Remove saved analysis records',
+              subtitle: 'Remove saved analysis records persistently',
               trailing: const Icon(
                 Icons.arrow_forward_ios_rounded,
                 size: 16,
@@ -455,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   SizedBox(height: 9),
                   Text(
-                    'Version 1.0.0 • Demo',
+                    'Version 1.0.0 • Connected',
                     style: TextStyle(
                       color: Color(0xFF8993A1),
                       fontSize: 10,
