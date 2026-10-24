@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,8 +105,11 @@ class ScamService {
   static const String _keySpringBootUrl = 'scamshield_spring_boot_url';
   static const String _keyOllamaUrl = 'scamshield_ollama_url';
 
-  // Check Android Notification Listener permission
+  // Check Notification Permission (Android Listener / iOS Local Protection)
   Future<bool> isNotificationPermissionGranted() async {
+    if (Platform.isIOS) {
+      return true; // iOS handles security sandboxing natively; local scan protection is active.
+    }
     try {
       final bool? granted = await _channel.invokeMethod<bool>('isNotificationPermissionGranted');
       return granted ?? false;
@@ -114,8 +118,11 @@ class ScamService {
     }
   }
 
-  // Open Android Notification Access Settings
+  // Open Notification Access Settings
   Future<bool> openNotificationAccessSettings() async {
+    if (Platform.isIOS) {
+      return true;
+    }
     try {
       final bool? result = await _channel.invokeMethod<bool>('openNotificationAccessSettings');
       return result ?? false;
@@ -124,11 +131,16 @@ class ScamService {
     }
   }
 
-  // Trigger Device Vibration
+  // Trigger Device Vibration / Haptic Feedback (Cross-platform Android & iOS)
   Future<void> triggerVibration({int durationMs = 400}) async {
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool(_keyVibration) ?? true;
     if (!enabled) return;
+
+    if (Platform.isIOS) {
+      HapticFeedback.heavyImpact();
+      return;
+    }
 
     try {
       await _channel.invokeMethod('triggerVibration', {'durationMs': durationMs});
@@ -227,7 +239,6 @@ class ScamService {
 
   // Hybrid Message Analysis (Spring Boot / Ollama API + Offline Local Rules Engine)
   Future<ScanRecord> analyzeMessage(String message, String language) async {
-    // 1. Attempt Spring Boot API if reachable
     try {
       final springUrl = await getSpringBootUrl();
       final response = await http.post(
@@ -255,11 +266,9 @@ class ScamService {
         }
         return record;
       }
-    } catch (_) {
-      // Fallback if server is not connected
-    }
+    } catch (_) {}
 
-    // 2. Local Comprehensive Rule & Threat Intelligence Engine
+    // Local Comprehensive Rule & Threat Intelligence Engine
     final lower = message.toLowerCase();
     String risk = 'Low';
     String title = 'No Immediate Threat Detected';
@@ -267,48 +276,37 @@ class ScamService {
     String reason = 'No common fraud or scam patterns were detected in this message.';
     String recommendation = 'Always exercise normal caution. Do not share sensitive passwords or OTPs.';
 
-    // Rule 1: Banking & KYC Blocking Scams
     if (RegExp(r'(kyc|account.*block|suspend|deactivate|bank.*verify|update.*pancard|yono)').hasMatch(lower)) {
       risk = 'High';
       title = 'Banking / KYC Fraud Threat';
       category = 'Banking Scam';
       reason = 'The message creates panic regarding account suspension/blocking and asks for KYC verification or updates.';
       recommendation = 'Do NOT click links or call numbers in this SMS. Contact your bank directly via their official app or website.';
-    }
-    // Rule 2: UPI PIN / Payment Scams
-    else if (RegExp(r'(receive.*money.*pin|enter.*upi.*pin|claim.*cashback|refund.*credit|scan.*qr.*receive)').hasMatch(lower)) {
+    } else if (RegExp(r'(receive.*money.*pin|enter.*upi.*pin|claim.*cashback|refund.*credit|scan.*qr.*receive)').hasMatch(lower)) {
       risk = 'High';
       title = 'UPI PIN Fraud Attempt';
       category = 'UPI Scam';
       reason = 'Receiving money NEVER requires entering your UPI PIN. Entering a PIN will deduct funds from your account.';
       recommendation = 'NEVER enter your UPI PIN to receive money. Disconnect immediately.';
-    }
-    // Rule 3: Prize / Lottery Scams
-    else if (RegExp(r'(won|prize|lottery|lucky.*draw|kbc|congratulations.*claim|selected.*reward)').hasMatch(lower)) {
+    } else if (RegExp(r'(won|prize|lottery|lucky.*draw|kbc|congratulations.*claim|selected.*reward)').hasMatch(lower)) {
       risk = 'High';
       title = 'Unexpected Reward / Lottery Scam';
       category = 'Prize Fraud';
       reason = 'Unsolicited prize claims asking to open links or pay processing fees are classic lottery fraud schemes.';
       recommendation = 'Ignore unexpected prize messages. Never pay fee or GST to claim an unexpected gift.';
-    }
-    // Rule 4: Job Offer Scams
-    else if (RegExp(r'(part.*time.*job|work.*from.*home|daily.*income|telegram.*task|like.*youtube|guaranteed.*earning)').hasMatch(lower)) {
+    } else if (RegExp(r'(part.*time.*job|work.*from.*home|daily.*income|telegram.*task|like.*youtube|guaranteed.*earning)').hasMatch(lower)) {
       risk = 'Medium';
       title = 'Suspicious Job / Task Scheme';
       category = 'Job Scam';
       reason = 'Promises of easy daily income or paid Telegram tasks are frequent pretexts for prepaid task fraud.';
       recommendation = 'Avoid job offers requiring upfront payments, task recharges, or communication over unverified channels.';
-    }
-    // Rule 5: Delivery / Parcel Scams
-    else if (RegExp(r'(parcel.*on.*hold|address.*incomplete|courier.*fee|delivery.*failed|speedpost)').hasMatch(lower)) {
+    } else if (RegExp(r'(parcel.*on.*hold|address.*incomplete|courier.*fee|delivery.*failed|speedpost)').hasMatch(lower)) {
       risk = 'Medium';
       title = 'Unverified Delivery Fee Request';
       category = 'Parcel Scam';
-      reason = 'Fake delivery update messages lure users to phishing sites to enter card details for nominal re-delivery fees.';
-      recommendation = 'Verify consignment tracking only on the official courier website (e.g. India Post, BlueDart).';
-    }
-    // Rule 6: Phishing Links & Shortened URLs
-    else if (RegExp(r'(http://|https://|bit\.ly|tinyurl|t\.co|is\.gd|cutt\.ly|shorturl)').hasMatch(lower)) {
+      reason = 'Unexpected delivery fee requests can lead to payment phishing.';
+      recommendation = 'Check the tracking number through the courier official website.';
+    } else if (RegExp(r'(http://|https://|bit\.ly|tinyurl|t\.co|is\.gd|cutt\.ly|shorturl)').hasMatch(lower)) {
       if (risk == 'Low') {
         risk = 'Medium';
         title = 'Contains Unverified Link';

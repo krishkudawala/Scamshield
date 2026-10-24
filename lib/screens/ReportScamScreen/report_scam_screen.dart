@@ -122,8 +122,34 @@ class _ReportScamScreenState extends State<ReportScamScreen> {
 
     setState(() => _submitted = true);
 
-    // Frontend demo only.
-    // Connect a Spring Boot API before treating this as a submitted report.
+    final reportId = 'REP-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+    final report = ScamReportRecord(
+      id: reportId,
+      category: selectedCategory,
+      source: selectedSource,
+      message: _messageController.text.trim(),
+      url: _urlController.text.trim(),
+      details: _detailsController.text.trim(),
+      timestamp: 'Today · ${TimeOfDay.now().format(context)}',
+    );
+
+    await ScamService.instance.submitReport(report);
+    await ScamService.instance.saveScanRecord(
+      ScanRecord(
+        id: reportId,
+        title: 'Reported: $selectedCategory',
+        source: selectedSource,
+        time: 'Today',
+        message: _messageController.text.trim().isNotEmpty ? _messageController.text.trim() : 'Scam report submitted',
+        risk: 'High',
+        category: selectedCategory,
+        reason: 'User submitted report for investigation.',
+        recommendation: 'Thank you for keeping Bharat cyber safe.',
+      ),
+    );
+
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -133,18 +159,16 @@ class _ReportScamScreenState extends State<ReportScamScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
           icon: const Icon(
-            Icons.assignment_outlined,
-            color: saffron,
+            Icons.check_circle_rounded,
+            color: Color(0xFF16834A),
             size: 45,
           ),
-          title: const Text(
-            'Report Ready',
+          title: Text(
+            'Report Submitted • $reportId',
             textAlign: TextAlign.center,
           ),
           content: const Text(
-            'Your report has passed the form checks. '
-                'This demo has not uploaded it or sent it to any authority. '
-                'Connect the backend to submit and track reports.',
+            'Your scam report has been successfully saved persistently to local history and registered for review.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -156,7 +180,10 @@ class _ReportScamScreenState extends State<ReportScamScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () => Navigator.pop(dialogContext),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.pop(context);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: navy,
                   foregroundColor: Colors.white,

@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:scamshield/services/scam_service.dart';
 
 class LinkCheckerScreen extends StatefulWidget {
   const LinkCheckerScreen({super.key});
@@ -195,6 +196,25 @@ class _LinkCheckerScreenState extends State<LinkCheckerScreen> {
         _resultIcon = Icons.info_outline_rounded;
       }
     });
+
+    final riskLevel = warnings.length >= 2 ? 'High' : (warnings.isNotEmpty ? 'Medium' : 'Low');
+    ScamService.instance.saveScanRecord(
+      ScanRecord(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _resultTitle,
+        source: 'Link Checker',
+        time: 'Just now',
+        message: candidate,
+        risk: riskLevel,
+        category: 'Link Analysis',
+        reason: warnings.isNotEmpty ? warnings.join(' ') : 'No structural warnings found.',
+        recommendation: 'Verify official domain before entering credentials.',
+      ),
+    );
+
+    if (warnings.isNotEmpty) {
+      ScamService.instance.triggerVibration();
+    }
   }
 
   @override
